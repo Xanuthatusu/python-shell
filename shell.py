@@ -7,14 +7,14 @@ import subprocess
 import signal
 
 class Color():
-    HEADER = "\x1b[95m"
-    OKBLUE = "\x1b[94m"
-    OKGREEN = "\x1b[92m"
-    WARNING = "\x1b[93m"
-    FAIL = "\x1b[91m"
-    ENDC = "\x1b[0m"
-    BOLD = "\x1b[1m"
-    UNDERLINE = "\x1b[4m"
+  HEADER = "\x1b[95m"
+  OKBLUE = "\x1b[94m"
+  OKGREEN = "\x1b[92m"
+  WARNING = "\x1b[93m"
+  FAIL = "\x1b[91m"
+  ENDC = "\x1b[0m"
+  BOLD = "\x1b[1m"
+  UNDERLINE = "\x1b[4m"
 
 Color = Color()
 
@@ -37,7 +37,10 @@ def handleSignal(signum, stackFrame):
 
   else:
     del jobs[pid]
-    sys.stdout.write("\nProgram with PID: " + str(pid) + " exited\n" + os.getcwd().replace(os.getenv("HOME"), "~") + " > ")
+    if sig == 0:
+      sys.stdout.write(Color.OKGREEN + "\nProgram with PID: " + str(pid) + " exited successfully!\n" + Color.ENDC + os.getcwd().replace(os.getenv("HOME"), "~") + " > ")
+    else:
+      sys.stdout.write(Color.FAIL + "\nProgram with PID: " + str(pid) + " exited with a non-zero!\n" + Color.ENDC + os.getcwd().replace(os.getenv("HOME"), "~") + " > ")
     sys.stdout.flush()
 
 def handleCtrlC(signum, stackFrame):
