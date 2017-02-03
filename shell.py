@@ -47,6 +47,90 @@ def handleCtrlC(signum, stackFrame):
 signal.signal(signal.SIGCHLD, handleSignal)
 signal.signal(signal.SIGINT, handleCtrlC)
 
+def handlePiping(cmd):
+  r, w = os.pipe()
+  pid = os.fork()
+  index = cmd.index("|")
+
+  if pid == 0:
+    first = cmd[:index].split()
+
+    os.close(r)
+    os.dup2(w, 1)
+    os.close(w)
+
+    os.execvp(first[0], first)
+
+  else:
+    currentForegrounds.append(pid)
+
+  pid = os.fork()
+
+  if pid == 0:
+    second = cmd[index+1:].split()
+
+    os.close(w)
+    os.dup2(r, 0)
+    os.close(r)
+
+    os.execvp(second[0], second)
+
+  else:
+    os.close(w)
+    os.close(r)
+    currentForegrounds.append(pid)
+
+def handleCd(cmd):
+  global commandFailed
+
+  if len(cmd) == 1:
+    os.chdir(os.getenv("HOME"))
+  else:
+    if cmd[1] == "~":
+      cmd[1] = os.getenv("HOME")
+    try:
+      os.chdir(cmd[1])
+    except:
+      print(Color.FAIL + "File not found" + Color.ENDC)
+      commandFailed = True
+
+def handleRedirection(cmd):
+  while len(cmd) > 2 and cmd[-2] in (">", "<", ">>"):
+    outFile = os.path.abspath(cmd[-1])
+
+    operation = cmd[-2]
+    cmd = cmd[:-2]
+
+    if operation == ">":
+      fd = os.open(outFile, os.O_WRONLY|os.O_TRUNC|os.O_CREAT, 0o644)
+
+      os.dup2(fd, 1)
+
+    elif operation == ">>":
+      fd = os.open(outFile, os.O_WRONLY|os.O_APPEND)
+
+      os.dup2(fd, 1)
+
+    elif operation == "<":
+      try:
+        fd = os.open(outFile, os.O_RDONLY)
+
+        os.dup2(fd, 0)
+
+      except:
+        print(Color.FAIL + "File not found" + Color.ENDC)
+        commandFailed = True
+
+  handleNormal(cmd)
+
+def handleNormal(cmd):
+  try:
+    os.execvp(cmd[0], cmd)
+  except:
+    print(Color.FAIL + "Invalid command" + Color.ENDC)
+    commandFailed = True
+    sys.exit()
+
 while True:
   if len(currentForegrounds):
     continue
@@ -62,37 +146,7 @@ while True:
   cmd = sys.stdin.readline()
 
   if "|" in cmd:
-    r, w = os.pipe()
-    pid = os.fork()
-    index = cmd.index("|")
-
-    if pid == 0:
-      first = cmd[:index].split()
-
-      os.close(r)
-      os.dup2(w, 1)
-      os.close(w)
-
-      os.execvp(first[0], first)
-
-    else:
-      currentForegrounds.append(pid)
-
-    pid = os.fork()
-
-    if pid == 0:
-      second = cmd[index+1:].split()
-
-      os.close(w)
-      os.dup2(r, 0)
-      os.close(r)
-
-      os.execvp(second[0], second)
-
-    else:
-      os.close(w)
-      os.close(r)
-      currentForegrounds.append(pid)
+    handlePiping(cmd)
 
   else:
     if cmd == "":
@@ -105,17 +159,10 @@ while True:
 
     if cmd[0] == "exit" or cmd[0] == "quit":
       sys.exit(1)
+
     elif cmd[0] == "cd":
-      if len(cmd) == 1:
-        os.chdir(os.getenv("HOME"))
-      else:
-        if cmd[1] == "~":
-          cmd[1] = os.getenv("HOME")
-        try:
-          os.chdir(cmd[1])
-        except:
-          print(Color.FAIL + "File not found" + Color.ENDC)
-          commandFailed = True
+      handleCd(cmd)
+
     elif cmd[0] == "jobs":
       for job in jobs:
         print(str(job) + " " + str(jobs[job]))
@@ -127,37 +174,10 @@ while True:
         if cmd[-1] == "&":
           cmd = cmd[:-1]
 
-        while len(cmd) > 2 and (cmd[-2] in (">", "<", ">>")):
-          outFile = os.path.abspath(cmd[-1])
+        if len(cmd) > 2 and cmd[-2] in (">", "<", ">>"):
+          handleRedirection(cmd)
 
-          operation = cmd[-2]
-          cmd = cmd[:-2]
-
-          if operation == ">":
-            fd = os.open(outFile, os.O_WRONLY|os.O_TRUNC|os.O_CREAT, 0o644)
-
-            os.dup2(fd, 1)
-
-          elif operation == ">>":
-            fd = os.open(outFile, os.O_WRONLY|os.O_APPEND)
-
-            os.dup2(fd, 1)
-
-          elif operation == "<":
-            try:
-              fd = os.open(outFile, os.O_RDONLY)
-
-              os.dup2(fd, 0)
-
-            except:
-              print(Color.FAIL + "File not found" + Color.ENDC)
-              commandFailed = True
-
-        try:
-          os.execvp(cmd[0], cmd)
-        except:
-          print(Color.FAIL + "Invalid command" + Color.ENDC)
-          sys.exit(2)
+        handleNormal(cmd)
 
       else:
         if cmd[-1] != "&":
