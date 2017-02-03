@@ -20,33 +20,35 @@ Color = Color()
 
 commandFailed = False
 
-backgrounds = {}
+jobs = {}
 
-currentForeground = None
-parent = None
+currentForegrounds = []
 
 def handleSignal(signum, stackFrame):
   global currentForeground
   global parent
 
   pid, sig = os.waitpid(-1, os.WNOHANG)
-  if currentForeground == pid:
-    currentForeground = None
+  if pid in currentForegrounds:
+    currentForegrounds.remove(pid)
     if sig == 512:
       commandFailed = True
     return
 
-  if parent == pid:
-    parent = None
-    sys.exit()
-
   else:
-    print("program exited")
+    del jobs[pid]
+    sys.stdout.write("\nProgram with PID: " + str(pid) + " exited\n" + os.getcwd().replace(os.getenv("HOME"), "~") + " > ")
+    sys.stdout.flush()
+
+def handleCtrlC(signum, stackFrame):
+  print(Color.FAIL + "\nExiting!" + Color.ENDC)
+  sys.exit()
 
 signal.signal(signal.SIGCHLD, handleSignal)
+signal.signal(signal.SIGINT, handleCtrlC)
 
 while True:
-  if currentForeground is not None:
+  if len(currentForegrounds):
     continue
 
   if commandFailed:
@@ -74,7 +76,7 @@ while True:
       os.execvp(first[0], first)
 
     else:
-      os.waitpid(0, 0)
+      currentForegrounds.append(pid)
 
     pid = os.fork()
 
@@ -90,80 +92,75 @@ while True:
     else:
       os.close(w)
       os.close(r)
-      os.waitpid(pid, 0)
+      currentForegrounds.append(pid)
 
   else:
-    split = os.fork()
+    if cmd == "":
+      sys.exit(1)
 
-    if split == 0:
-      if cmd == "":
-        sys.exit(1)
+    cmd = cmd.split()
 
-      cmd = cmd.split()
+    if len(cmd) == 0:
+      continue
 
-      if len(cmd) == 0:
-        continue
-
-      if cmd[0] == "exit" or cmd[0] == "quit":
-        sys.exit(1)
-      elif cmd[0] == "cd":
-        if len(cmd) == 1:
-          os.chdir(os.getenv("HOME"))
-        else:
-          if cmd[1] == "~":
-            cmd[1] = os.getenv("HOME")
-          try:
-            os.chdir(cmd[1])
-          except:
-            print(Color.FAIL + "File not found" + Color.ENDC)
-            commandFailed = True
-      elif cmd[0] == "jobs":
-        print(backgrounds)
-
+    if cmd[0] == "exit" or cmd[0] == "quit":
+      sys.exit(1)
+    elif cmd[0] == "cd":
+      if len(cmd) == 1:
+        os.chdir(os.getenv("HOME"))
       else:
-        pid = os.fork()
-
-        if pid == 0:
-          if cmd[-1] == "&":
-            cmd = cmd[:-1]
-
-          while len(cmd) > 2 and (cmd[-2] in (">", "<", ">>")):
-            outFile = os.path.abspath(cmd[-1])
-
-            operation = cmd[-2]
-            cmd = cmd[:-2]
-
-            if operation == ">":
-              fd = os.open(outFile, os.O_WRONLY|os.O_TRUNC|os.O_CREAT, 0o644)
-
-              os.dup2(fd, 1)
-
-            elif operation == ">>":
-              fd = os.open(outFile, os.O_WRONLY|os.O_APPEND)
-
-              os.dup2(fd, 1)
-
-            elif operation == "<":
-              try:
-                fd = os.open(outFile, os.O_RDONLY)
-
-                os.dup2(fd, 0)
-
-              except:
-                print(Color.FAIL + "File not found" + Color.ENDC)
-                commandFailed = True
-
-          try:
-            os.execvp(cmd[0], cmd)
-          except:
-            print(Color.FAIL + "Invalid command" + Color.ENDC)
-            sys.exit(2)
-
-        else:
-          if cmd[-1] != "&":
-            currentForeground = pid
-          else:
-            backgrounds[pid] = "test"
+        if cmd[1] == "~":
+          cmd[1] = os.getenv("HOME")
+        try:
+          os.chdir(cmd[1])
+        except:
+          print(Color.FAIL + "File not found" + Color.ENDC)
+          commandFailed = True
+    elif cmd[0] == "jobs":
+      for job in jobs:
+        print(str(job) + " " + str(jobs[job]))
 
     else:
-      parent = split
+      pid = os.fork()
+
+      if pid == 0:
+        if cmd[-1] == "&":
+          cmd = cmd[:-1]
+
+        while len(cmd) > 2 and (cmd[-2] in (">", "<", ">>")):
+          outFile = os.path.abspath(cmd[-1])
+
+          operation = cmd[-2]
+          cmd = cmd[:-2]
+
+          if operation == ">":
+            fd = os.open(outFile, os.O_WRONLY|os.O_TRUNC|os.O_CREAT, 0o644)
+
+            os.dup2(fd, 1)
+
+          elif operation == ">>":
+            fd = os.open(outFile, os.O_WRONLY|os.O_APPEND)
+
+            os.dup2(fd, 1)
+
+          elif operation == "<":
+            try:
+              fd = os.open(outFile, os.O_RDONLY)
+
+              os.dup2(fd, 0)
+
+            except:
+              print(Color.FAIL + "File not found" + Color.ENDC)
+              commandFailed = True
+
+        try:
+          os.execvp(cmd[0], cmd)
+        except:
+          print(Color.FAIL + "Invalid command" + Color.ENDC)
+          sys.exit(2)
+
+      else:
+        if cmd[-1] != "&":
+          currentForegrounds.append(pid)
+        else:
+          jobs[pid] = cmd[0]
